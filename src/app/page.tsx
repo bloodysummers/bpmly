@@ -35,7 +35,7 @@ function Shell() {
   if (!mounted) {
     return (
       <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4">
-        <p className="text-sm text-muted">Cargando metrónomo…</p>
+        <p className="text-sm text-muted">Cargando Bpmly…</p>
       </div>
     );
   }
@@ -48,7 +48,7 @@ function Shell() {
             ♩
           </span>
           <div>
-            <h1 className="text-lg font-bold leading-tight">Metrónomo</h1>
+            <h1 className="text-lg font-bold leading-tight">Bpmly</h1>
             <p className="text-xs text-muted">Presets + track con cambios de tempo y compás</p>
           </div>
         </div>

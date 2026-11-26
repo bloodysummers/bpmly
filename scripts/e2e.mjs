@@ -1,13 +1,14 @@
 import { chromium } from "playwright";
 
-const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
-const URL = process.env.URL ?? "http://localhost:3001";
+const URL = process.env.URL ?? "http://localhost:3000";
+// usa el canal msedge; con BROWSER=chromium se usa el Chromium de Playwright
+const CHANNEL = process.env.BROWSER ?? "msedge";
 
 const problems = [];
 
 async function main() {
   const browser = await chromium.launch({
-    executablePath: EDGE,
+    channel: CHANNEL,
     args: ["--autoplay-policy=no-user-gesture-required", "--no-sandbox"],
   });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
