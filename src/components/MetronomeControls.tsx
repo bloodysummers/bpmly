@@ -4,8 +4,8 @@ import { useRef, useState } from "react";
 import { useMetronome } from "@/lib/metronome-context";
 import { BeatVisualizer } from "./BeatVisualizer";
 import { Pendulum } from "./Pendulum";
-import { Button, Panel, Stepper } from "./ui";
-import { DENOMINATORS, MAX_TEMPO, MIN_TEMPO } from "@/lib/types";
+import { Button, Panel, Select } from "./ui";
+import { DENOMINATORS, MAX_TEMPO, MIN_TEMPO, NUMERATORS, SUBDIVISIONS, subdivisionLabel } from "@/lib/types";
 
 export function MetronomeControls() {
   const {
@@ -16,6 +16,9 @@ export function MetronomeControls() {
     startPreset,
     stop,
     savePreset,
+    createPreset,
+    savedPreset,
+    presetDirty,
     volume,
     setVolume,
     preview,
@@ -42,8 +45,33 @@ export function MetronomeControls() {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
       <Panel title="Metrónomo" right={<span className="font-mono text-xs text-muted">{mode === "track" ? "en modo track" : "modo preset"}</span>}>
-        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_150px_110px]">
-          <div className="flex flex-col gap-2">
+        {/* Nombre del preset y guardado: el preset se define aquí */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <input
+            data-testid="Nombre del preset"
+            value={draft.name}
+            onChange={(e) => setDraft({ name: e.target.value })}
+            placeholder="Nombre del preset"
+            className="h-8 w-56 rounded-md border border-line bg-ink px-2 text-sm text-foreground outline-none focus:border-accent/60"
+          />
+          <Button
+            variant="primary"
+            onClick={savePreset}
+            title={savedPreset ? "Sobrescribe el preset seleccionado" : "Guarda el preset actual con este nombre"}
+          >
+            {savedPreset ? "Actualizar preset" : "Guardar preset"}
+          </Button>
+          <Button onClick={createPreset} title="Crea un preset nuevo con el tempo, compás y acentos actuales">
+            ＋ Crear preset
+          </Button>
+          <span className="ml-auto text-xs text-muted">
+            {savedPreset ? (presetDirty ? "cambios sin guardar" : "guardado") : "preset sin guardar"}
+          </span>
+        </div>
+
+        {/* Bloque de tempo a ancho completo: los desplegables van en su propia fila, así
+            no se enciman cuando el panel es estrecho (breakpoints de 1024–1400) */}
+        <div className="flex flex-col gap-2">
             <div className="flex items-end gap-3">
               <div className="flex items-baseline gap-2">
                 <span className="font-mono text-5xl font-bold leading-none text-accent">{Math.round(draft.tempo)}</span>
@@ -77,27 +105,36 @@ export function MetronomeControls() {
             </div>
           </div>
 
-          <Stepper
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <Select
             label="Numerador"
             value={draft.numerator}
-            min={1}
-            max={16}
+            options={NUMERATORS}
             onChange={(v) => setDraft({ numerator: v })}
           />
-          <Stepper
+          <Select
             label="Denominador"
             value={draft.denominator}
-            min={1}
-            max={32}
-            onChange={(v) => {
-              const allowed = DENOMINATORS.filter((d) => d <= v).pop() ?? 1;
-              setDraft({ denominator: allowed });
-            }}
+            options={DENOMINATORS}
+            onChange={(v) => setDraft({ denominator: v })}
+          />
+          <Select
+            label="Subdivisión"
+            value={draft.subdivision}
+            options={SUBDIVISIONS}
+            onChange={(v) => setDraft({ subdivision: v })}
+            format={subdivisionLabel}
           />
         </div>
 
+        <p className="mt-2 text-xs text-muted">
+          El BPM fija la velocidad del pulso: cada pulsación dura 60/BPM. El numerador son pulsos por
+          compás; el denominador solo nombra el valor (notación). La subdivisión añade clics suaves
+          entre pulsos.
+        </p>
+
         <div className="mt-5 border-t border-line pt-4">
-          <BeatVisualizer editable />
+          <BeatVisualizer editable subdivision={draft.subdivision} />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-4">
@@ -113,7 +150,6 @@ export function MetronomeControls() {
           <Button onClick={() => previewPreset(draft)} disabled={isPlaying}>
             Escuchar compás
           </Button>
-          <Button onClick={savePreset}>Guardar preset</Button>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs uppercase tracking-wider text-muted">Volumen</span>
             <input

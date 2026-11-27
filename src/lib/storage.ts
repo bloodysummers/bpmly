@@ -24,9 +24,11 @@ function write<T>(key: string, value: T[]) {
   }
 }
 
-export const loadPresets = () => read<Preset>(PRESETS_KEY);
+export const loadPresets = () =>
+  read<Preset>(PRESETS_KEY).map((p) => ({ ...p, subdivision: p.subdivision ?? 1 }));
 export const savePresets = (p: Preset[]) => write(PRESETS_KEY, p);
-export const loadTracks = () => read<Track>(TRACKS_KEY);
+export const loadTracks = () =>
+  read<Track>(TRACKS_KEY).map((t) => ({ ...t, blocks: t.blocks.map((b) => ({ ...b, subdivision: b.subdivision ?? 1 })) }));
 export const saveTracks = (t: Track[]) => write(TRACKS_KEY, t);
 
 /** Presets y tracks de ejemplo para la primera visita (deterministas: sin Date.now) */
@@ -38,6 +40,7 @@ export function seedData(): { presets: Preset[]; tracks: Track[] } {
       tempo: 90,
       numerator: 4,
       denominator: 4,
+      subdivision: 1,
       accentPattern: [true, false, false, false],
       createdAt: 0,
     },
@@ -47,6 +50,7 @@ export function seedData(): { presets: Preset[]; tracks: Track[] } {
       tempo: 140,
       numerator: 3,
       denominator: 4,
+      subdivision: 1,
       accentPattern: [true, false, false],
       createdAt: 0,
     },
@@ -56,6 +60,7 @@ export function seedData(): { presets: Preset[]; tracks: Track[] } {
       tempo: 100,
       numerator: 6,
       denominator: 8,
+      subdivision: 1,
       accentPattern: [true, false, false, true, false, false],
       createdAt: 0,
     },
@@ -65,6 +70,7 @@ export function seedData(): { presets: Preset[]; tracks: Track[] } {
       tempo: 130,
       numerator: 7,
       denominator: 8,
+      subdivision: 1,
       accentPattern: [true, false, false, false, false, false, false],
       createdAt: 0,
     },
@@ -75,10 +81,10 @@ export function seedData(): { presets: Preset[]; tracks: Track[] } {
       id: "track_demo",
       name: "Demo: intro → verso → puente",
       blocks: [
-        { id: "b1", presetId: "preset_waltz", name: "Vals 3/4 · 140", tempo: 140, numerator: 3, denominator: 4, repeats: 2 },
-        { id: "b2", presetId: "preset_rock", name: "Rock 4/4 · 90", tempo: 90, numerator: 4, denominator: 4, repeats: 8 },
-        { id: "b3", presetId: "preset_68", name: "6/8 · 100", tempo: 100, numerator: 6, denominator: 8, repeats: 4 },
-        { id: "b4", presetId: "preset_78", name: "7/8 · 130", tempo: 130, numerator: 7, denominator: 8, repeats: 2 },
+        { id: "b1", presetId: "preset_waltz", name: "Vals 3/4 · 140", tempo: 140, numerator: 3, denominator: 4, subdivision: 1, repeats: 2 },
+        { id: "b2", presetId: "preset_rock", name: "Rock 4/4 · 90", tempo: 90, numerator: 4, denominator: 4, subdivision: 1, repeats: 8 },
+        { id: "b3", presetId: "preset_68", name: "6/8 · 100", tempo: 100, numerator: 6, denominator: 8, subdivision: 1, repeats: 4 },
+        { id: "b4", presetId: "preset_78", name: "7/8 · 130", tempo: 130, numerator: 7, denominator: 8, subdivision: 1, repeats: 2 },
       ],
       createdAt: 0,
     },

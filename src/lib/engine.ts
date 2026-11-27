@@ -1,4 +1,4 @@
-import { beatDuration, type Preset, type Track, type TrackBlock } from "./types";
+import { beatDuration, blockDuration, type Preset, type Track, type TrackBlock } from "./types";
 
 export interface Segment {
   blockIndex: number;
@@ -6,6 +6,7 @@ export interface Segment {
   tempo: number;
   numerator: number;
   denominator: number;
+  subdivision: number;
   repeats: number;
   accentPattern: boolean[];
   startSeconds: number;
@@ -22,6 +23,8 @@ export interface BeatEvent {
   beatInBlock: number;
   numerator: number;
   tempo: number;
+  /** Clics por pulso: 1 = solo el pulso, 2 = corcheas, 3 = tresillo… */
+  subdivision: number;
   accent: boolean;
   beatDur: number;
 }
@@ -231,6 +234,7 @@ export class MetronomeEngine {
         return;
       }
       this.playClick(ev);
+      this.playSubClicks(ev);
       this.queue.push(ev);
       this.nextNoteTime += ev.beatDur;
       this.advance();
@@ -252,6 +256,7 @@ export class MetronomeEngine {
         beatInBlock: this.beatInMeasure,
         numerator: p.numerator,
         tempo: p.tempo,
+        subdivision: p.subdivision,
         accent,
         beatDur,
       };
@@ -271,6 +276,7 @@ export class MetronomeEngine {
       beatInBlock: this.beatInBlock,
       numerator: seg.numerator,
       tempo: seg.tempo,
+      subdivision: seg.subdivision,
       accent,
       beatDur,
     };
@@ -320,6 +326,29 @@ export class MetronomeEngine {
     src.stop(ev.time + buffer.duration + 0.05);
   }
 
+  /**
+   * Clics intermedios de la subdivisión: se programan entre el pulso y el
+   * siguiente pulso, con un sonido suave y volumen bajo. No entran en la cola:
+   * la UI solo destella en los pulsos.
+   */
+  private playSubClicks(ev: BeatEvent) {
+    if (!this.ctx || !this.master || ev.subdivision <= 1) return;
+    const buffer = this.buffers.soft;
+    if (!buffer) return;
+    const step = ev.beatDur / ev.subdivision;
+    for (let k = 1; k < ev.subdivision; k++) {
+      const t = ev.time + k * step;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buffer;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.4;
+      src.connect(g);
+      g.connect(this.master);
+      src.start(t);
+      src.stop(t + buffer.duration + 0.05);
+    }
+  }
+
   /** Preview inmediato (para probar un sonido desde la UI) */
   async preview(name: SoundName = "tick") {
     const ctx = await this.ensure();
@@ -336,17 +365,30 @@ export class MetronomeEngine {
     const ctx = await this.ensure();
     const beatDur = beatDuration(preset.tempo);
     const start = ctx.currentTime + 0.08;
+    const sub = preset.subdivision ?? 1;
     for (let i = 0; i < preset.numerator; i++) {
       const accent = preset.accentPattern[i] ?? i === 0;
       const buffer = this.buffers[accent ? "accent" : "normal"];
-      if (!buffer) continue;
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      const g = ctx.createGain();
-      g.gain.value = accent ? 1 : 0.75;
-      src.connect(g);
-      g.connect(this.master!);
-      src.start(start + i * beatDur);
+      if (buffer && this.master) {
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        const g = ctx.createGain();
+        g.gain.value = accent ? 1 : 0.75;
+        src.connect(g);
+        g.connect(this.master);
+        src.start(start + i * beatDur);
+      }
+      const soft = this.buffers.soft;
+      if (!soft || !this.master || sub <= 1) continue;
+      for (let k = 1; k < sub; k++) {
+        const src = ctx.createBufferSource();
+        src.buffer = soft;
+        const g = ctx.createGain();
+        g.gain.value = 0.4;
+        src.connect(g);
+        g.connect(this.master);
+        src.start(start + (i + k / sub) * beatDur);
+      }
     }
   }
 }
@@ -357,13 +399,14 @@ export function buildSegments(blocks: TrackBlock[], presetsById: Map<string, Pre
   return blocks.map((b, i) => {
     const preset = b.presetId ? presetsById.get(b.presetId) : undefined;
     const accentPattern = preset?.accentPattern ?? Array.from({ length: b.numerator }, (_, k) => k === 0);
-    const durationSeconds = b.repeats * b.numerator * beatDuration(b.tempo);
+    const durationSeconds = blockDuration(b);
     const seg: Segment = {
       blockIndex: i,
       name: b.name,
       tempo: b.tempo,
       numerator: b.numerator,
       denominator: b.denominator,
+      subdivision: b.subdivision ?? 1,
       repeats: b.repeats,
       accentPattern,
       startSeconds: acc,

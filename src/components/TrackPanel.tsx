@@ -2,19 +2,16 @@
 
 import { useMetronome } from "@/lib/metronome-context";
 import { Timeline } from "./Timeline";
-import { Button, Field, Panel } from "./ui";
-import { formatTime, trackDuration } from "@/lib/types";
+import { Button, Field, NumberField, Panel, Select } from "./ui";
+import { DENOMINATORS, formatTime, MAX_TEMPO, MIN_TEMPO, NUMERATORS, SUBDIVISIONS, subdivisionLabel, trackDuration } from "@/lib/types";
 
 export function TrackPanel() {
   const {
     currentTrack,
-    tracks,
     selectedBlockId,
     setCurrentTrack,
-    selectTrack,
     newTrack,
     saveTrack,
-    deleteTrack,
     addBlockFromDraft,
     updateBlock,
     deleteBlock,
@@ -42,38 +39,21 @@ export function TrackPanel() {
         </div>
       }
     >
-      {/* Selector de tracks guardados */}
+      {/* Track abierto: nombre y guardado (la lista de tracks vive en su propio panel) */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
+          data-testid="Nombre del track"
           value={currentTrack.name}
           onChange={(e) => setCurrentTrack({ name: e.target.value })}
           placeholder="Nombre del track"
-          className="h-8 w-56 rounded-md border border-line bg-ink px-2 text-sm outline-none focus:border-accent/60"
+          className="h-8 w-64 rounded-md border border-line bg-ink px-2 text-sm text-foreground outline-none focus:border-accent/60"
         />
-        <Button variant="primary" onClick={saveTrack}>
+        <Button variant="primary" onClick={saveTrack} title="Sobrescribe el track abierto">
           Guardar track
         </Button>
-        <Button onClick={newTrack}>Nuevo track</Button>
-        <div className="flex flex-wrap gap-1.5">
-          {tracks.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => selectTrack(t.id)}
-              className={`rounded-md border px-2.5 py-1 text-xs ${
-                t.id === currentTrack.id ? "border-accent/60 bg-accent/10 text-accent" : "border-line bg-panel-2 hover:border-muted/50"
-              }`}
-            >
-              {t.name}
-              <span className="ml-1.5 font-mono opacity-60">{formatTime(trackDuration(t.blocks))}</span>
-            </button>
-          ))}
-        </div>
-        {tracks.some((t) => t.id === currentTrack.id) && (
-          <Button variant="ghost" onClick={() => deleteTrack(currentTrack.id)} title="Eliminar track guardado">
-            ✕
-          </Button>
-        )}
+        <Button onClick={newTrack} title="Abre un track en blanco">
+          ＋ Nuevo track
+        </Button>
       </div>
 
       {/* Transporte */}
@@ -117,50 +97,53 @@ export function TrackPanel() {
       <Timeline />
 
       {/* Inspector del bloque */}
-      <div className="mt-3 rounded-lg border border-line bg-panel-2 p-3">
+      <div data-testid="inspector" className="mt-3 rounded-lg border border-line bg-panel-2 p-3">
         {selected ? (
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-40">
               <Field label="Nombre" value={selected.name} onChange={(v) => updateBlock(selected.id, { name: String(v) })} />
             </div>
             <div className="w-24">
-              <Field
+              <NumberField
                 label="Tempo"
-                type="number"
-                min={20}
-                max={300}
+                min={MIN_TEMPO}
+                max={MAX_TEMPO}
                 value={selected.tempo}
-                onChange={(v) => updateBlock(selected.id, { tempo: Math.max(20, Math.min(300, Number(v) || 20)) })}
+                onChange={(v) => updateBlock(selected.id, { tempo: v })}
               />
             </div>
             <div className="w-20">
-              <Field
+              <Select
                 label="Numerador"
-                type="number"
-                min={1}
-                max={16}
                 value={selected.numerator}
-                onChange={(v) => updateBlock(selected.id, { numerator: Math.max(1, Math.min(16, Number(v) || 1)) })}
+                options={NUMERATORS}
+                onChange={(v) => updateBlock(selected.id, { numerator: v })}
               />
             </div>
-            <div className="w-20">
-              <Field
+            <div className="w-24">
+              <Select
                 label="Denominador"
-                type="number"
-                min={1}
-                max={32}
                 value={selected.denominator}
-                onChange={(v) => updateBlock(selected.id, { denominator: Math.max(1, Number(v) || 1) })}
+                options={DENOMINATORS}
+                onChange={(v) => updateBlock(selected.id, { denominator: v })}
               />
             </div>
             <div className="w-20">
-              <Field
+              <Select
+                label="Subdivisión"
+                value={selected.subdivision}
+                options={SUBDIVISIONS}
+                onChange={(v) => updateBlock(selected.id, { subdivision: v })}
+                format={subdivisionLabel}
+              />
+            </div>
+            <div className="w-24">
+              <NumberField
                 label="Repeticiones"
-                type="number"
                 min={1}
                 max={256}
                 value={selected.repeats}
-                onChange={(v) => updateBlock(selected.id, { repeats: Math.max(1, Math.min(256, Number(v) || 1)) })}
+                onChange={(v) => updateBlock(selected.id, { repeats: v })}
               />
             </div>
             <div className="ml-auto flex gap-2">

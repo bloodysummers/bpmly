@@ -5,38 +5,22 @@ import { Button, Panel } from "./ui";
 import type { Preset } from "@/lib/types";
 
 export function PresetPanel() {
-  const { presets, draft, selectPreset, deletePreset, previewPreset, addBlockFromPreset, setDraft, savePreset, newPreset } =
-    useMetronome();
+  const { presets, draft, selectPreset, deletePreset, previewPreset, addBlockFromPreset } = useMetronome();
 
   return (
     <Panel
       title="Presets"
       right={
         <span className="font-mono text-xs text-muted">
-          {presets.length} guardado{presets.length === 1 ? "" : "s"}
+          {presets.length} guardados
         </span>
       }
       className="flex h-full flex-col"
     >
-      <div className="mb-3 flex items-center gap-2">
-        <input
-          value={draft.name}
-          onChange={(e) => setDraft({ name: e.target.value })}
-          placeholder="Nombre del preset"
-          className="h-8 w-full rounded-md border border-line bg-ink px-2 text-sm outline-none focus:border-accent/60"
-        />
-        <Button variant="primary" onClick={savePreset} title="Guardar / actualizar el preset actual">
-          Guardar
-        </Button>
-        <Button onClick={newPreset} title="Crear un preset nuevo">
-          Nuevo
-        </Button>
-      </div>
-
       <ul className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
         {presets.length === 0 && (
           <li className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-muted">
-            No hay presets. Configura tempo y compás, y pulsa «Guardar».
+            No hay presets. Configura tempo y compás en el metrónomo y pulsa «＋ Crear preset».
           </li>
         )}
         {presets.map((p: Preset) => {
@@ -86,7 +70,8 @@ export function PresetPanel() {
       </ul>
 
       <p className="mt-3 text-xs text-muted">
-        Arrastra un preset a la línea de tiempo del track, o usa ＋ para añadirlo al final.
+        Arrastra un preset a la línea de tiempo del track, o usa ＋ para añadirlo al final. El nombre y el
+        guardado se editan en el módulo del metrónomo.
       </p>
     </Panel>
   );

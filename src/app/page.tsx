@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { MetronomeProvider, useMetronome } from "@/lib/metronome-context";
 import { MetronomeControls } from "@/components/MetronomeControls";
 import { PresetPanel } from "@/components/PresetPanel";
+import { TrackListPanel } from "@/components/TrackListPanel";
 import { TrackPanel } from "@/components/TrackPanel";
 
 function Shell() {
@@ -68,7 +69,10 @@ function Shell() {
         <PresetPanel />
       </div>
 
-      <TrackPanel />
+      <div className="grid gap-4 lg:grid-cols-[330px_minmax(0,1fr)]">
+        <TrackListPanel />
+        <TrackPanel />
+      </div>
 
       <footer className="pb-4 text-center text-xs text-muted">
         Presets y tracks se guardan en el navegador (localStorage).

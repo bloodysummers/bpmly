@@ -1,13 +1,24 @@
 "use client";
 
 import { useMetronome } from "@/lib/metronome-context";
+import { subdivisionLabel } from "@/lib/types";
 
 /**
  * Visualizador de beats: un recuadro por beat del compás.
  * El acento se pinta en color distinto y cada recuadro flashea cuando le toca sonar.
+ *
+ * La animación se dispara añadiendo la clase solo cuando el beat está activo y
+ * la key del recuadro es estable: así la animación corre una sola vez (al
+ * activarse) y el recuadro anterior no vuelve a flashear al dejar de sonar.
  */
-export function BeatVisualizer({ editable = false }: { editable?: boolean }) {
-  const { mode, draft, currentBeat, beatKey, currentTrack, presets, toggleAccent, isPlaying } =
+export function BeatVisualizer({
+  editable = false,
+  subdivision = 1,
+}: {
+  editable?: boolean;
+  subdivision?: number;
+}) {
+  const { mode, draft, currentBeat, currentTrack, presets, toggleAccent, isPlaying } =
     useMetronome();
 
   const numerator = mode === "track" ? (currentBeat?.numerator ?? draft.numerator) : draft.numerator;
@@ -43,13 +54,20 @@ export function BeatVisualizer({ editable = false }: { editable?: boolean }) {
             : "bg-beat text-ink border-beat shadow-[0_0_22px_-2px] shadow-beat/60";
           return (
             <button
-              key={`${i}-${isActive ? beatKey : "idle"}`}
+              key={i}
               type="button"
               onClick={() => canEdit && toggleAccent(i)}
               title={canEdit ? `Beat ${i + 1}: clic para alternar acento` : `Beat ${i + 1}`}
-              className={`beat-flash flex h-16 w-16 items-center justify-center rounded-lg border-2 font-mono text-lg font-bold transition-colors ${base} ${isActive ? activeCls : ""} ${canEdit ? "cursor-pointer" : "cursor-default"}`}
+              className={`flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-lg border-2 font-mono text-lg font-bold transition-colors ${base} ${isActive ? `beat-flash ${activeCls}` : ""} ${canEdit ? "cursor-pointer" : "cursor-default"}`}
             >
               {i + 1}
+              {subdivision > 1 && (
+                <span className="flex gap-1" aria-hidden>
+                  {Array.from({ length: subdivision - 1 }, (_, k) => (
+                    <span key={k} className="h-1 w-1 rounded-full bg-current opacity-60" />
+                  ))}
+                </span>
+              )}
             </button>
           );
         })}
@@ -64,6 +82,9 @@ export function BeatVisualizer({ editable = false }: { editable?: boolean }) {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-beat/70" /> beat
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-muted/50" /> {subdivisionLabel(subdivision)}
         </span>
         {canEdit && <span className="ml-auto italic opacity-70">clic en un beat para marcar acento</span>}
       </div>

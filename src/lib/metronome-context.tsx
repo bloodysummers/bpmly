@@ -42,12 +42,16 @@ interface MetronomeCtx {
 
   // acciones sobre el preset
   setDraft: (patch: Partial<Preset>) => void;
-  newPreset: () => void;
   toggleAccent: (index: number) => void;
   savePreset: () => void;
+  createPreset: () => void;
   deletePreset: (id: string) => void;
   selectPreset: (id: string) => void;
   startPreset: () => void;
+  /** Preset guardado que coincide con el draft actual (null si el draft no está guardado) */
+  savedPreset: Preset | null;
+  /** true si el draft tiene cambios respecto al preset guardado */
+  presetDirty: boolean;
 
   // acciones sobre el track
   setCurrentTrack: (patch: Partial<Track>) => void;
@@ -64,6 +68,8 @@ interface MetronomeCtx {
   deleteTrack: (id: string) => void;
   selectTrack: (id: string) => void;
   startTrack: (startIndex?: number) => void;
+  /** Selecciona un track guardado y lo reproduce desde el principio */
+  playTrack: (id: string) => void;
 
   stop: () => void;
   setVolume: (v: number) => void;
@@ -179,10 +185,6 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const newPreset = useCallback(() => {
-    setDraftState(makePreset({ id: uid("preset"), name: "Preset sin nombre" }));
-  }, []);
-
   const toggleAccent = useCallback((index: number) => {
     setDraftState((d) => {
       const pattern = [...d.accentPattern];
@@ -197,6 +199,23 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
       list.some((p) => p.id === d.id) ? list.map((p) => (p.id === d.id ? { ...d } : p)) : [...list, { ...d }],
     );
   }, [draft]);
+
+  /** Crea un preset nuevo a partir del draft: id nuevo, entra en la lista y queda seleccionado */
+  const createPreset = useCallback(() => {
+    const fresh: Preset = {
+      ...structuredClone(draft),
+      id: uid("preset"),
+      name: draft.name.trim() || "Preset sin nombre",
+      createdAt: Date.now(),
+    };
+    setPresets((list) => [...list, structuredClone(fresh)]);
+    setDraftState(structuredClone(fresh));
+  }, [draft]);
+
+  // Preset guardado que corresponde al draft, y si el draft tiene cambios sin guardar
+  const savedPreset = presets.find((p) => p.id === draft.id) ?? null;
+  const presetDirty =
+    !savedPreset || JSON.stringify(savedPreset) !== JSON.stringify({ ...draft, createdAt: savedPreset.createdAt });
 
   const deletePreset = useCallback((id: string) => {
     setPresets((list) => list.filter((p) => p.id !== id));
@@ -318,6 +337,21 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
     [engine, currentTrack, presetsById, loop],
   );
 
+  const playTrack = useCallback(
+    async (id: string) => {
+      const t = tracks.find((x) => x.id === id);
+      if (!t) return;
+      const clone = structuredClone(t);
+      setCurrentTrackState(clone);
+      setSelectedBlockId(null);
+      engine.setLoop(loop);
+      await engine.startTrack(clone, 0, presetsById);
+      setMode("track");
+      setIsPlaying(engine.isPlaying);
+    },
+    [tracks, engine, presetsById, loop],
+  );
+
   const setVolume = useCallback(
     (v: number) => {
       setVolumeState(v);
@@ -352,12 +386,14 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
     playhead,
     phase,
     setDraft,
-    newPreset,
     toggleAccent,
     savePreset,
+    createPreset,
     deletePreset,
     selectPreset,
     startPreset,
+    savedPreset,
+    presetDirty,
     setCurrentTrack,
     addBlockFromPreset,
     addBlockFromDraft,
@@ -372,6 +408,7 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
     deleteTrack,
     selectTrack,
     startTrack,
+    playTrack,
     stop,
     setVolume,
     setLoop,

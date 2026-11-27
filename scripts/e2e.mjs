@@ -31,23 +31,34 @@ async function main() {
   checks.beatBoxes = await page.locator('button[title^="Beat"]').count();
   checks.pendulum = await page.locator("svg").count();
   checks.timeline = await page.locator('[data-testid="timeline"]').count();
+  checks.trackListPanel = await page.locator('[data-testid="track"]').count();
 
   // 2. Iniciar el metrónomo y observar qué beats se activan
   await page.locator('button:has-text("Iniciar")').click();
-  const seq = await page.evaluate(async () => {
+
+  // Solo un recuadro debe estar iluminado, y la animación de flasheo debe correr
+  // únicamente en el recuadro activo (no en el anterior al dejar de estarlo)
+  const probe = await page.evaluate(async () => {
     const out = [];
-    for (let i = 0; i < 90; i++) {
-      // re-consultar: React remonta el box activo cuando cambia su key
+    for (let i = 0; i < 70; i++) {
       const boxes = [...document.querySelectorAll('button[title^="Beat"]')];
-      const idx = boxes.findIndex((b) => b.className.includes("text-ink"));
-      out.push(idx);
-      await new Promise((r) => setTimeout(r, 40));
+      const lit = boxes.map((b, k) => (b.className.includes("text-ink") ? k : -1)).filter((k) => k >= 0);
+      const flashing = boxes
+        .map((b, k) =>
+          b.getAnimations().some((a) => a.animationName === "beat-flash" && a.playState === "running" && (a.currentTime ?? 0) < 260) ? k : -1,
+        )
+        .filter((k) => k >= 0);
+      out.push({ lit, flashing });
+      await new Promise((r) => setTimeout(r, 30));
     }
     return out;
   });
-  const active = seq.filter((i) => i >= 0);
-  checks.beatSequence = active.join(",");
-  checks.cycles = Math.floor(active.length / 4);
+  const litSeq = probe.map((p) => p.lit.join("+")).filter((s) => s !== "");
+  checks.beatSequence = litSeq.join(",");
+  checks.cycles = Math.floor(litSeq.length / 4);
+  checks.maxLitBoxes = Math.max(...probe.map((p) => p.lit.length));
+  checks.oneBoxAtATime = checks.maxLitBoxes === 1;
+  checks.flashOnlyOnActive = probe.every((p) => p.flashing.every((k) => p.lit.includes(k)));
 
   // 3. Pendulum: la aguja debe moverse
   const angles = await page.evaluate(async () => {
@@ -82,6 +93,7 @@ async function main() {
     }, ms);
 
   const avg = (ts) => (ts.length > 1 ? (ts[ts.length - 1] - ts[0]) / (ts.length - 1) : 0);
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   const beatsSlow = await sampleBeats(2600);
   checks.avgBeatMsAt90 = Math.round(avg(beatsSlow));
 
@@ -91,7 +103,61 @@ async function main() {
   checks.avgBeatMsAt200 = Math.round(avg(beatsFast));
   checks.liveTempo = checks.avgBeatMsAt200 > 0 && checks.avgBeatMsAt200 < checks.avgBeatMsAt90 * 0.75;
 
+  // 3c. El denominador NO cambia la velocidad del pulso: es notación
+  await page.locator('button:has-text("120")').first().click();
+  await page.waitForTimeout(120);
+  const beats44 = await sampleBeats(2600);
+  await page.locator('select[data-testid="Denominador"]').first().selectOption("8");
+  await page.waitForTimeout(120);
+  const beats48 = await sampleBeats(2600);
+  checks.avgBeatMs44 = Math.round(avg(beats44));
+  checks.avgBeatMs48 = Math.round(avg(beats48));
+  checks.denominatorKeepsPulse = Math.abs(checks.avgBeatMs48 - checks.avgBeatMs44) < checks.avgBeatMs44 * 0.15;
+  await page.locator('select[data-testid="Denominador"]').first().selectOption("4");
 
+  // 3d. La subdivisión sí cambia lo que se oye: clics extra entre pulsos.
+  // Se instrumenta el AudioContext para registrar el instante de cada clic real.
+  await page.evaluate(() => {
+    window.__clicks = [];
+    const orig = AudioContext.prototype.createBufferSource;
+    AudioContext.prototype.createBufferSource = function () {
+      const node = orig.call(this);
+      const origStart = node.start.bind(node);
+      node.start = (when = 0) => {
+        window.__clicks.push(when);
+        return origStart(when);
+      };
+      return node;
+    };
+  });
+
+  const subSel = page.locator('select[data-testid="Subdivisión"]').first();
+  const sampleClicks = async (value) => {
+    await subSel.selectOption(value);
+    await page.evaluate(() => (window.__clicks.length = 0));
+    await page.waitForTimeout(2000);
+    const xs = await page.evaluate(() => window.__clicks);
+    return xs.slice(1).map((t, i) => (t - xs[i]) * 1000);
+  };
+  const d1 = await sampleClicks("1");
+  const d4 = await sampleClicks("4");
+  checks.clickMs1 = Math.round(mean(d1));
+  checks.clickMs4 = Math.round(mean(d4));
+  checks.subdivisionAddsClicks = d1.length > 2 && d4.length > 2 && mean(d4) < mean(d1) * 0.35;
+  const beatsSub4 = await sampleBeats(2600);
+  checks.pulseKeepsWithSubdivision = Math.abs(avg(beatsSub4) - checks.avgBeatMs44) < checks.avgBeatMs44 * 0.15;
+  await subSel.selectOption("1");
+
+  // 3e. Numerador como dropdown: cambiarlo cambia las cajas de beat
+  const numSel = page.locator('select[data-testid="Numerador"]').first();
+  const numBefore = await numSel.inputValue();
+  await numSel.selectOption("6");
+  const numAfter = await numSel.inputValue();
+  await page.waitForTimeout(150);
+  const boxesAfter = await page.locator('button[title^="Beat"]').count();
+  checks.numeratorDropdown = `${numBefore}->${numAfter}`;
+  checks.numeratorDropdownWorks = numAfter === "6" && boxesAfter === 6;
+  await numSel.selectOption("4");
   await page.screenshot({ path: "shot-metronome.png", fullPage: true });
 
   // 4. Detener
@@ -120,7 +186,7 @@ async function main() {
   const afterDrop = await page.locator('[data-testid="block"]').count();
   checks.presetDropped = afterDrop === demoBlocks + 1;
 
-  // 8. Seleccionar un bloque y editar repeticiones
+  // 8. Seleccionar un bloque y editar repeticiones (valida al perder el foco)
   const lastBlock = page.locator('[data-testid="block"]').last();
   await lastBlock.click();
   const repeatsInput = page.locator('[data-testid="Repeticiones"]');
@@ -128,8 +194,30 @@ async function main() {
   checks.inspectorVisible = hasRepeatsField;
   if (hasRepeatsField) {
     await repeatsInput.fill("6");
-    checks.repeatsUpdated = (await repeatsInput.inputValue()) === "6";
+    await repeatsInput.blur();
+    checks.repeatsUpdated = (await lastBlock.innerText()).includes("×6");
   }
+
+  // 8b. Tempo: escribir «120» dígito a dígito no debe recortarse a 20 en cada tecla
+  const tempoField = page.locator('[data-testid="Tempo"]');
+  await tempoField.click();
+  await tempoField.fill("");
+  await tempoField.pressSequentially("1", { delay: 40 });
+  const afterOne = await tempoField.inputValue();
+  await tempoField.pressSequentially("20", { delay: 40 });
+  const afterFull = await tempoField.inputValue();
+  await tempoField.press("Enter");
+  checks.tempoTypingKeepsText = afterOne === "1" && afterFull === "120";
+  checks.tempoAppliedOnCommit = (await lastBlock.innerText()).includes("120");
+
+  // 8c. Numerador y denominador del inspector son desplegables, no campos abiertos
+  const inspector = page.locator('[data-testid="inspector"]');
+  checks.inspectorSelects =
+    (await inspector.locator('select[data-testid="Numerador"]').count()) === 1 &&
+    (await inspector.locator('select[data-testid="Denominador"]').count()) === 1 &&
+    (await inspector.locator('select[data-testid="Subdivisión"]').count()) === 1;
+  await inspector.locator('select[data-testid="Numerador"]').selectOption("6");
+  checks.numeratorApplied = (await lastBlock.innerText()).includes("6/");
 
   // 9. Reproducir el track y ver avanzar el playhead
   await page.locator('button:has-text("Reproducir track")').click();
@@ -150,8 +238,15 @@ async function main() {
   await page.screenshot({ path: "shot-track.png", fullPage: true });
 
   // 10. Reordenar bloques arrastrando uno sobre otro
+  // (con zoom 0.25 todos los bloques caben en la vista: el arrastre es estable)
+  await page.locator('[data-testid="zoom"]').evaluate((el) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(el, "0.25");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator('[data-testid="timeline"]').evaluate((el) => (el.scrollLeft = 0));
   const namesBefore = await page.locator('[data-testid="block"] span.truncate').allTextContents();
-  await page.locator('[data-testid="block"]').nth(0).dragTo(page.locator('[data-testid="block"]').nth(2));
+  await page.locator('[data-testid="block"]').nth(0).dragTo(page.locator('[data-testid="block"]').nth(3));
   const namesAfter = await page.locator('[data-testid="block"] span.truncate').allTextContents();
   checks.namesBefore = namesBefore;
   checks.namesAfter = namesAfter;
@@ -246,18 +341,84 @@ async function main() {
   await page.locator('button:has-text("Seguimiento pausado")').click();
   await page.locator('button:has-text("■ Detener")').nth(1).click();
 
-  // 14. Guardar preset y track
+  // 14. Crear preset: aparece en la lista al instante, sin pasar por «Guardar»
   const presetsBefore = await page.locator("li[draggable]").count();
-  await page.locator('button:has-text("Guardar")').first().click();
-  checks.presetSaved = (await page.locator("li[draggable]").count()) >= presetsBefore;
-  await page.locator('button:has-text("Guardar track")').click();
-  checks.trackSaved = (await page.locator("button:has-text('Demo')").count()) > 0;
+  await page.locator('[data-testid="Nombre del preset"]').fill("Prueba 120");
+  await page.locator('button:has-text("Crear preset")').click();
+  const presetsAfter = await page.locator("li[draggable]").count();
+  checks.presetCreated = presetsAfter === presetsBefore + 1;
+  checks.newPresetInList = (await page.locator("li[draggable]", { hasText: "Prueba 120" }).count()) === 1;
 
-  // 15. Persistencia: recargar y comprobar que sigue ahí
+  // 14b. «Actualizar preset» sobrescribe el preset seleccionado
+  await page.locator('button:has-text("160")').first().click();
+  await page.locator('button:has-text("Actualizar preset")').click();
+  const rowText = await page.locator("li[draggable]", { hasText: "Prueba 120" }).innerText();
+  checks.presetUpdated = rowText.includes("160");
+  checks.savedLabel = (await page.locator('button:has-text("Actualizar preset")').count()) === 1;
+
+  // 15. Panel de tracks: seleccionar, reproducir desde la lista, eliminar
+  const trackRows = page.locator('[data-testid="track"]');
+  checks.trackRows = await trackRows.count();
+  await trackRows.first().locator("button").first().click();
+  checks.trackSelected = (await page.locator('[data-testid="Nombre del track"]').inputValue()).includes("Demo");
+  await trackRows.first().locator('button[title="Reproducir este track"]').click();
+  const playheadFromList = await page.evaluate(async () => {
+    const out = [];
+    for (let i = 0; i < 12; i++) {
+      const el = document.querySelector('[data-testid="timeline"] > div > div.bg-playhead');
+      out.push(el ? parseFloat(el.style.left) : 0);
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    return out;
+  });
+  checks.trackPlaysFromList = Math.max(...playheadFromList) > 20;
+  await page.locator('button:has-text("■ Detener")').nth(1).click();
+
+  // 16. Guardar track y persistencia tras recargar
+  await page.locator('button:has-text("Guardar track")').click();
+  checks.trackSaved = (await page.locator('[data-testid="track"]', { hasText: "Demo" }).count()) > 0;
   await page.reload({ waitUntil: "networkidle" });
   checks.presetsAfterReload = await page.locator("li[draggable]").count();
   checks.blocksAfterReload = await page.locator('[data-testid="block"]').count();
-  checks.trackChipsAfterReload = await page.locator('[data-testid="timeline"]').count();
+  checks.trackRowsAfterReload = await page.locator('[data-testid="track"]').count();
+
+  // 17. Responsive: en móvil nada debe desbordar la pantalla
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForTimeout(300);
+  checks.mobileInnerWidth = await page.evaluate(() => innerWidth);
+  checks.mobileScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  checks.mobileNoOverflow = checks.mobileScrollWidth <= checks.mobileInnerWidth + 1;
+  checks.mobileTimelineScrollable = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="timeline"]');
+    return !!el && el.scrollWidth > el.clientWidth && el.clientWidth <= innerWidth;
+  });
+  await page.screenshot({ path: "shot-mobile.png", fullPage: true });
+
+  // 17b. A 1024 px el panel de metrónomo es estrecho: los desplegables no deben
+  // encimarse sobre el control de tempo (el slider, su número y los botones rápidos)
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.waitForTimeout(300);
+  const tempoBox = await page.locator('input[type="range"]').first().boundingBox();
+  const fieldBoxes = [];
+  for (const t of ["Numerador", "Denominador", "Subdivisión"]) {
+    const sel = await page.locator(`select[data-testid="${t}"]`).first().boundingBox();
+    const lab = await page.locator(`span:text-is("${t}")`).first().boundingBox();
+    if (sel) fieldBoxes.push(sel);
+    if (lab) fieldBoxes.push(lab);
+  }
+  checks.dropdownsOverlapTempo = fieldBoxes.some(
+    (b) =>
+      b.left < tempoBox.x + tempoBox.width &&
+      b.x + b.width > tempoBox.x &&
+      b.y < tempoBox.y + tempoBox.height &&
+      b.y + b.height > tempoBox.y,
+  );
+  checks.tempoRowWidth = Math.round(tempoBox.width);
+  await page.screenshot({ path: "shot-1024.png", fullPage: true });
+
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(200);
+  checks.desktopNoOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
   console.log(JSON.stringify(checks, null, 2));
   console.log("\nProblemas de consola:", problems.length ? problems : "ninguno");
